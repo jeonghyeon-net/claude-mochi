@@ -10,6 +10,7 @@
       <div id="tabs">
         <button class="tab active" data-tab="cards">Cards</button>
         <button class="tab" data-tab="quiz">Quiz</button>
+        <button class="tab" data-tab="infinite">Infinite</button>
       </div>
 
       <div id="tab-cards" class="tab-content active">
@@ -64,6 +65,31 @@
         <div id="quiz-right">
           <textarea id="quiz-output" readonly placeholder="Quiz will appear here..."></textarea>
           <button id="copy-quiz-btn" class="secondary" disabled>Copy</button>
+        </div>
+      </div>
+
+      <div id="tab-infinite" class="tab-content">
+        <div id="inf-left">
+          <div id="inf-settings">
+            <input type="text" id="inf-deck-id" placeholder="Deck ID" />
+            <input type="password" id="inf-mochi-key" placeholder="Mochi API Key" />
+            <button id="inf-fetch-btn">Fetch Cards</button>
+            <div id="inf-card-count"></div>
+          </div>
+
+          <div id="inf-options">
+            <label><input type="checkbox" name="inf-type" value="reading" checked> 요미가나</label>
+            <label><input type="checkbox" name="inf-type" value="meaning" checked> 뜻</label>
+            <label><input type="checkbox" name="inf-type" value="kanji" checked> 한자</label>
+          </div>
+
+          <button id="inf-start-btn" disabled>Start</button>
+        </div>
+
+        <div id="inf-right">
+          <div id="inf-score">0 / 0</div>
+          <div id="inf-question"></div>
+          <div id="inf-choices"></div>
         </div>
       </div>
     </div>

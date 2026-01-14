@@ -20,6 +20,7 @@ async function init() {
   if (mochiKey) {
     ($('mochi-key') as HTMLInputElement).value = mochiKey
     ;($('quiz-mochi-key') as HTMLInputElement).value = mochiKey
+    ;($('inf-mochi-key') as HTMLInputElement).value = mochiKey
   }
 
   const paddleToken = await window.electronAPI.getPaddleOcrToken()
@@ -38,14 +39,14 @@ async function init() {
     btn.textContent = `${current}/${total}`
   })
 
-  // Helper to setup key input behavior with sync
-  const setupKeyInput = (id: string, saveFn: (v: string) => void, onChange?: () => void, syncId?: string) => {
+  // Helper to setup key input behavior with sync to multiple targets
+  const setupKeyInput = (id: string, saveFn: (v: string) => void, onChange?: () => void, syncIds?: string[]) => {
     const input = $(id) as HTMLInputElement
     const save = () => {
       const v = input.value.trim()
       saveFn(v)
       onChange?.()
-      if (syncId) ($(syncId) as HTMLInputElement).value = v
+      syncIds?.forEach(sid => ($(sid) as HTMLInputElement).value = v)
     }
     input.addEventListener('focus', () => input.type = 'text')
     input.addEventListener('blur', () => { input.type = 'password'; save() })
@@ -53,9 +54,11 @@ async function init() {
     input.addEventListener('paste', () => setTimeout(save, 0))
   }
 
-  // Sync mochi-key between Cards and Quiz tabs
-  setupKeyInput('mochi-key', (v) => window.electronAPI.setMochiKey(v), undefined, 'quiz-mochi-key')
-  setupKeyInput('quiz-mochi-key', (v) => window.electronAPI.setMochiKey(v), undefined, 'mochi-key')
+  // Sync mochi-key between all tabs
+  const mochiKeySync = (exclude: string) => ['mochi-key', 'quiz-mochi-key', 'inf-mochi-key'].filter(id => id !== exclude)
+  setupKeyInput('mochi-key', (v) => window.electronAPI.setMochiKey(v), undefined, mochiKeySync('mochi-key'))
+  setupKeyInput('quiz-mochi-key', (v) => window.electronAPI.setMochiKey(v), undefined, mochiKeySync('quiz-mochi-key'))
+  setupKeyInput('inf-mochi-key', (v) => window.electronAPI.setMochiKey(v), undefined, mochiKeySync('inf-mochi-key'))
   setupKeyInput('paddle-ocr-token', (v) => window.electronAPI.setPaddleOcrToken(v), updateParseBtn)
 
   updateParseBtn()
@@ -278,6 +281,130 @@ $('copy-quiz-btn').addEventListener('click', async () => {
   const btn = $('copy-quiz-btn') as HTMLButtonElement
   btn.textContent = 'Copied!'
   setTimeout(() => { btn.textContent = 'Copy' }, 1000)
+})
+
+// ===== Infinite Quiz Tab =====
+let infCards: MochiCard[] = []
+let infBusy = false
+let infScore = { correct: 0, total: 0 }
+let infCurrentCard: MochiCard | null = null
+let infQuestionType: string = ''
+
+function updateInfButtons() {
+  ;($('inf-start-btn') as HTMLButtonElement).disabled = infCards.length < 6
+  ;($('inf-fetch-btn') as HTMLButtonElement).disabled = infBusy
+}
+
+$('inf-fetch-btn').addEventListener('click', async () => {
+  if (infBusy) return
+  const deckId = ($('inf-deck-id') as HTMLInputElement).value.trim()
+  if (!deckId) return
+
+  const btn = $('inf-fetch-btn') as HTMLButtonElement
+  infBusy = true
+  btn.disabled = true
+  btn.textContent = '...'
+
+  try {
+    infCards = await window.electronAPI.fetchDeckCards(deckId)
+    $('inf-card-count').textContent = infCards.length >= 6
+      ? `${infCards.length} cards loaded`
+      : `${infCards.length} cards (need at least 6)`
+  } catch (e) {
+    $('inf-card-count').textContent = (e as Error).message
+    infCards = []
+  }
+  infBusy = false
+  updateInfButtons()
+  btn.textContent = 'Fetch Cards'
+})
+
+function getCardValue(card: MochiCard, type: string): string {
+  if (type === 'reading') return card.reading || card.front
+  if (type === 'meaning') return card.meaning
+  if (type === 'kanji') return card.kanji || card.front
+  return card.front
+}
+
+function showInfQuestion() {
+  // Get selected types
+  const selectedTypes = Array.from(document.querySelectorAll('input[name="inf-type"]:checked'))
+    .map(el => (el as HTMLInputElement).value)
+  if (selectedTypes.length === 0) return
+
+  // Pick random card
+  infCurrentCard = infCards[Math.floor(Math.random() * infCards.length)]
+
+  // Pick random question type
+  infQuestionType = selectedTypes[Math.floor(Math.random() * selectedTypes.length)]
+
+  // Determine answer type (different from question type)
+  const answerTypes = selectedTypes.filter(t => t !== infQuestionType)
+  const answerType = answerTypes.length > 0
+    ? answerTypes[Math.floor(Math.random() * answerTypes.length)]
+    : infQuestionType
+
+  // Show question (the thing user needs to identify)
+  const questionValue = getCardValue(infCurrentCard, infQuestionType)
+  $('inf-question').textContent = questionValue
+
+  // Generate 6 choices (1 correct + 5 wrong)
+  const correctAnswer = getCardValue(infCurrentCard, answerType)
+  const wrongCards = infCards.filter(c => c !== infCurrentCard)
+  const shuffledWrong = shuffle(wrongCards).slice(0, 5)
+  const wrongAnswers = shuffledWrong.map(c => getCardValue(c, answerType))
+
+  const allChoices = shuffle([correctAnswer, ...wrongAnswers])
+
+  // Render choices
+  const choicesEl = $('inf-choices')
+  choicesEl.innerHTML = allChoices.map(choice =>
+    `<button data-answer="${choice}">${choice}</button>`
+  ).join('')
+
+  // Add click handlers
+  choicesEl.querySelectorAll('button').forEach(btn => {
+    btn.addEventListener('click', () => handleInfChoice(btn as HTMLButtonElement, correctAnswer))
+  })
+
+  // Update score display
+  $('inf-score').textContent = `${infScore.correct} / ${infScore.total}`
+}
+
+function handleInfChoice(btn: HTMLButtonElement, correctAnswer: string) {
+  const chosen = btn.dataset.answer
+  infScore.total++
+
+  if (chosen === correctAnswer) {
+    infScore.correct++
+    btn.classList.add('correct')
+    // Move to next question after short delay
+    setTimeout(showInfQuestion, 500)
+  } else {
+    btn.classList.add('wrong')
+    // Highlight correct answer
+    $('inf-choices').querySelectorAll('button').forEach(b => {
+      if ((b as HTMLButtonElement).dataset.answer === correctAnswer) {
+        (b as HTMLButtonElement).classList.add('correct')
+      }
+    })
+    // Move to next question after longer delay
+    setTimeout(showInfQuestion, 1500)
+  }
+
+  // Disable all buttons
+  $('inf-choices').querySelectorAll('button').forEach(b => {
+    (b as HTMLButtonElement).disabled = true
+  })
+
+  $('inf-score').textContent = `${infScore.correct} / ${infScore.total}`
+}
+
+$('inf-start-btn').addEventListener('click', () => {
+  if (infCards.length < 6) return
+
+  infScore = { correct: 0, total: 0 }
+  showInfQuestion()
 })
 
 init()
