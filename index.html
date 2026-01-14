@@ -14,9 +14,9 @@
 
         <div id="preview" class="hidden">
           <img id="preview-img" />
+          <input type="password" id="paddle-ocr-token" placeholder="PaddleOCR Token" />
           <div class="actions">
-            <button id="parse-btn">Parse</button>
-            <button id="clear-btn" class="secondary">Clear</button>
+            <button id="parse-btn" disabled>Parse</button>
           </div>
         </div>
       </div>
@@ -32,6 +32,7 @@
           <input type="text" id="deck-name" placeholder="Deck name" />
           <input type="password" id="mochi-key" placeholder="Mochi API Key" />
           <button id="create-btn">Create Deck</button>
+          <button id="reset-btn" class="secondary">Reset</button>
         </div>
       </div>
     </div>

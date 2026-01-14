@@ -6,7 +6,8 @@ import { claudeService } from './services/ClaudeService'
 
 const store = new Store({
   defaults: {
-    mochiApiKey: ''
+    mochiApiKey: '',
+    paddleOcrToken: ''
   }
 })
 
@@ -25,7 +26,6 @@ function createWindow() {
 
   if (process.env.VITE_DEV_SERVER_URL) {
     mainWindow.loadURL(process.env.VITE_DEV_SERVER_URL)
-    mainWindow.webContents.openDevTools()
   } else {
     mainWindow.loadFile(path.join(__dirname, '../dist/index.html'))
   }
@@ -60,6 +60,16 @@ ipcMain.handle('set-mochi-key', (_event, apiKey: string) => {
   return true
 })
 
+// PaddleOCR Token handlers
+ipcMain.handle('get-paddle-ocr-token', () => {
+  return store.get('paddleOcrToken') as string
+})
+
+ipcMain.handle('set-paddle-ocr-token', (_event, token: string) => {
+  store.set('paddleOcrToken', token)
+  return true
+})
+
 // File selection handler - single image only
 ipcMain.handle('select-image', async () => {
   const result = await dialog.showOpenDialog(mainWindow!, {
@@ -89,21 +99,30 @@ ipcMain.handle('select-image', async () => {
 
 // Parse Japanese words from image using Claude Code
 ipcMain.handle('parse-image', async (_event, imagePath: string) => {
+  const paddleOcrToken = store.get('paddleOcrToken') as string
+  if (!paddleOcrToken) {
+    throw new Error('PaddleOCR Token이 설정되지 않았습니다.')
+  }
+
   const sendProgress = (msg: string) => {
     mainWindow?.webContents.send('progress', msg)
   }
-  return claudeService.parseJapaneseWords(imagePath, sendProgress)
+  return claudeService.parseJapaneseWords(imagePath, paddleOcrToken, sendProgress)
 })
 
 // Create Mochi deck and cards
 ipcMain.handle('create-mochi-deck', async (_event, data: {
   deckName: string
-  words: Array<{ word: string; reading: string; meaning: string }>
+  words: Array<{ word: string; reading: string; meaning: string; furigana: string }>
 }) => {
   const mochiApiKey = store.get('mochiApiKey') as string
 
   if (!mochiApiKey) {
     throw new Error('Mochi API Key가 설정되지 않았습니다.')
+  }
+
+  const sendProgress = (current: number, total: number) => {
+    mainWindow?.webContents.send('deck-progress', { current, total })
   }
 
   const headers = {
@@ -112,6 +131,7 @@ ipcMain.handle('create-mochi-deck', async (_event, data: {
   }
 
   // Create deck
+  sendProgress(0, data.words.length)
   const deckResponse = await fetch('https://app.mochi.cards/api/decks', {
     method: 'POST',
     headers,
@@ -128,7 +148,8 @@ ipcMain.handle('create-mochi-deck', async (_event, data: {
 
   // Create cards with furigana
   const createdCards: string[] = []
-  for (const word of data.words) {
+  for (let i = 0; i < data.words.length; i++) {
+    const word = data.words[i]
     // Mochi furigana syntax: {漢}(かん){字}(じ) - 한자별 개별 요미가나
     const cardContent = `# ${word.furigana}\n\n---\n\n${word.meaning}`
 
@@ -144,6 +165,7 @@ ipcMain.handle('create-mochi-deck', async (_event, data: {
     if (cardResponse.ok) {
       createdCards.push(word.word)
     }
+    sendProgress(i + 1, data.words.length)
   }
 
   return {

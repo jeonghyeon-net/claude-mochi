@@ -29,10 +29,13 @@ interface ElectronAPI {
   checkClaude: () => Promise<ClaudeAvailability>
   getMochiKey: () => Promise<string>
   setMochiKey: (apiKey: string) => Promise<boolean>
+  getPaddleOcrToken: () => Promise<string>
+  setPaddleOcrToken: (token: string) => Promise<boolean>
   selectImage: () => Promise<ImageData | null>
   parseImage: (imagePath: string) => Promise<JapaneseWord[]>
   createMochiDeck: (data: { deckName: string; words: JapaneseWord[] }) => Promise<DeckResult>
   onProgress: (callback: (msg: string) => void) => void
+  onDeckProgress: (callback: (data: { current: number; total: number }) => void) => void
 }
 
 interface Window {

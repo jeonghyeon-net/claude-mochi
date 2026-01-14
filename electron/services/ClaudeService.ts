@@ -1,9 +1,18 @@
 import { execSync } from 'child_process'
-import { existsSync, readdirSync } from 'fs'
-import { join, dirname } from 'path'
+import { existsSync, readdirSync, readFileSync } from 'fs'
+import { join, dirname, extname } from 'path'
 import { homedir, platform } from 'os'
 import { query } from '@anthropic-ai/claude-agent-sdk'
-import type { Options, SDKMessage } from '@anthropic-ai/claude-agent-sdk'
+import type { Options, SDKUserMessage } from '@anthropic-ai/claude-agent-sdk'
+
+type MediaType = 'image/jpeg' | 'image/png' | 'image/gif' | 'image/webp'
+type ImageBlockParam = {
+  type: 'image'
+  source: { type: 'base64'; media_type: MediaType; data: string }
+}
+type TextBlockParam = { type: 'text'; text: string }
+
+const PADDLE_OCR_API_URL = 'https://x9qcz4g1vc73q0s1.aistudio-app.com/layout-parsing'
 
 function addClaudePathToEnv(claudePath: string): void {
   const dir = dirname(claudePath)
@@ -87,6 +96,42 @@ function findClaudePath(): { found: boolean; path: string } {
   return { found: false, path: isWindows ? 'claude.exe' : 'claude' }
 }
 
+async function callPaddleOCR(imagePath: string, token: string): Promise<string> {
+  const fileBytes = readFileSync(imagePath)
+  const fileData = fileBytes.toString('base64')
+
+  const ext = extname(imagePath).toLowerCase()
+  const fileType = ext === '.pdf' ? 0 : 1
+
+  const payload = {
+    file: fileData,
+    fileType,
+    useDocOrientationClassify: false,
+    useDocUnwarping: false,
+    useChartRecognition: false,
+  }
+
+  const response = await fetch(PADDLE_OCR_API_URL, {
+    method: 'POST',
+    headers: {
+      'Authorization': `token ${token}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(payload),
+  })
+
+  if (!response.ok) {
+    throw new Error(`PaddleOCR API 오류: ${response.status}`)
+  }
+
+  const data = await response.json()
+  const results = data.result?.layoutParsingResults || []
+
+  // 모든 페이지/이미지의 마크다운 텍스트를 합침
+  const markdownTexts = results.map((res: { markdown?: { text?: string } }) => res.markdown?.text || '').filter(Boolean)
+  return markdownTexts.join('\n\n')
+}
+
 class ClaudeService {
   private claudePath: string
   private claudeAvailable: boolean
@@ -111,13 +156,43 @@ class ClaudeService {
 
   async parseJapaneseWords(
     imagePath: string,
+    paddleOcrToken: string,
     onProgress?: (msg: string) => void
   ): Promise<Array<{ word: string; reading: string; meaning: string; furigana: string }>> {
     if (!this.claudeAvailable) {
       throw new Error('Claude CLI를 찾을 수 없습니다.')
     }
 
-    const prompt = `이 이미지 파일을 읽고 일본어 단어들을 추출해줘: ${imagePath}
+    // Step 1: PaddleOCR로 이미지에서 텍스트 추출
+    onProgress?.('🔍 PaddleOCR로 텍스트 추출 중...')
+    let ocrText: string
+    try {
+      ocrText = await callPaddleOCR(imagePath, paddleOcrToken)
+      console.log('[ClaudeService] PaddleOCR 결과:', ocrText.slice(0, 500))
+    } catch (error) {
+      console.error('[ClaudeService] PaddleOCR 오류:', error)
+      throw new Error(`OCR 처리 실패: ${error}`)
+    }
+
+    if (!ocrText.trim()) {
+      onProgress?.('⚠️ 이미지에서 텍스트를 찾을 수 없습니다.')
+      return []
+    }
+
+    onProgress?.('📤 Claude에게 정리 요청 중...')
+
+    // Step 2: 이미지를 base64로 읽기
+    const imageBase64 = readFileSync(imagePath).toString('base64')
+    const ext = extname(imagePath).toLowerCase()
+    const mediaType = ext === '.png' ? 'image/png' : ext === '.gif' ? 'image/gif' : ext === '.webp' ? 'image/webp' : 'image/jpeg'
+
+    // Step 3: Claude에게 이미지 + OCR 결과를 함께 보내서 정리 요청
+    const promptText = `이 이미지와 PaddleOCR 결과를 참고해서 일본어 단어를 추출해줘.
+
+[PaddleOCR 결과]
+${ocrText}
+
+중요: 이미지에 실제로 보이는 단어만 추출해. 없는 단어를 만들어내지 마.
 
 각 단어에 대해 다음 형식의 JSON 배열로 반환해줘:
 [
@@ -135,44 +210,66 @@ furigana 필드는 각 한자마다 개별적으로 {한자}(읽기) 형식으�
 - 食べる → {食}(た)べる
 - ひらがな만 있으면 그냥 ひらがな 그대로
 
-이미지에 일본어가 없으면 빈 배열 []을 반환해줘.
+일본어가 없으면 빈 배열 []을 반환해줘.
 JSON만 반환하고 다른 설명은 하지 마.`
 
     const sdkOptions: Options = {
       cwd: homedir(),
       pathToClaudeCodeExecutable: this.claudePath,
-      systemPrompt: '당신은 일본어 단어 추출 전문가입니다. 이미지에서 일본어를 찾아 JSON 형식으로만 응답하세요.',
-      maxTurns: 10,
+      systemPrompt: '당신은 일본어 단어 정리 전문가입니다. 이미지와 OCR 결과를 참고해서 이미지에 실제로 보이는 일본어 단어만 추출합니다. 없는 단어를 만들어내지 마세요. JSON 형식으로만 응답하세요.',
+      maxTurns: 3,
       permissionMode: 'bypassPermissions',
+      includePartialMessages: true,
     }
 
     try {
-      const queryResult = query({ prompt, options: sdkOptions })
+      console.log('[ClaudeService] Claude 요청 프롬프트:', promptText.slice(0, 500))
+
+      // 이미지 + 텍스트를 함께 보내는 SDKUserMessage 생성
+      const imageBlock: ImageBlockParam = {
+        type: 'image',
+        source: { type: 'base64', media_type: mediaType, data: imageBase64 }
+      }
+      const textBlock: TextBlockParam = { type: 'text', text: promptText }
+
+      async function* createPromptWithImage(): AsyncGenerator<SDKUserMessage> {
+        yield {
+          type: 'user',
+          message: {
+            role: 'user',
+            content: [imageBlock, textBlock]
+          },
+          parent_tool_use_id: null,
+          session_id: ''
+        }
+      }
+
+      const queryResult = query({ prompt: createPromptWithImage(), options: sdkOptions })
       let resultText = ''
 
       for await (const msg of queryResult) {
-        // 모든 메시지 타입 로그
-        onProgress?.(`[${msg.type}]`)
-        console.log('[SDK]', msg.type, JSON.stringify(msg).slice(0, 200))
+        console.log('[SDK]', msg.type, JSON.stringify(msg).slice(0, 300))
 
         if (msg.type === 'stream_event') {
           const streamMsg = msg as { event?: { type?: string; delta?: { text?: string } } }
           if (streamMsg.event?.delta?.text) {
             resultText += streamMsg.event.delta.text
-            onProgress?.(streamMsg.event.delta.text.replace(/\n/g, ' '))
           }
         } else if (msg.type === 'assistant') {
-          const assistantMsg = msg as { message?: { content?: Array<{ type: string; text?: string }> } }
+          const assistantMsg = msg as {
+            message?: {
+              content?: Array<{ type: string; text?: string; name?: string; input?: Record<string, unknown> }>
+            }
+          }
           if (assistantMsg.message?.content) {
             for (const block of assistantMsg.message.content) {
               if (block.type === 'text' && block.text) {
                 if (!resultText) resultText = block.text
-                onProgress?.(block.text.slice(0, 100).replace(/\n/g, ' '))
               }
             }
           }
         } else if (msg.type === 'result') {
-          onProgress?.('완료')
+          onProgress?.('✅ 분석 완료')
         }
       }
 

@@ -34,6 +34,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getMochiKey: (): Promise<string> => ipcRenderer.invoke('get-mochi-key'),
   setMochiKey: (apiKey: string): Promise<boolean> => ipcRenderer.invoke('set-mochi-key', apiKey),
 
+  // PaddleOCR Token
+  getPaddleOcrToken: (): Promise<string> => ipcRenderer.invoke('get-paddle-ocr-token'),
+  setPaddleOcrToken: (token: string): Promise<boolean> => ipcRenderer.invoke('set-paddle-ocr-token', token),
+
   // Image operations
   selectImage: (): Promise<ImageData | null> => ipcRenderer.invoke('select-image'),
 
@@ -47,5 +51,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Progress events
   onProgress: (callback: (msg: string) => void) => {
     ipcRenderer.on('progress', (_event, msg) => callback(msg))
+  },
+
+  // Deck creation progress
+  onDeckProgress: (callback: (data: { current: number; total: number }) => void) => {
+    ipcRenderer.on('deck-progress', (_event, data) => callback(data))
   }
 })

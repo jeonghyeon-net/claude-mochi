@@ -57,7 +57,8 @@ body {
   border-radius: 4px;
   background: #111;
 }
-.actions { display: flex; gap: 6px; margin-top: 10px; flex-shrink: 0; }
+#preview input { margin-top: 10px; flex-shrink: 0; }
+.actions { display: flex; gap: 6px; margin-top: 8px; flex-shrink: 0; }
 
 /* Right: Cards area */
 #results {
@@ -127,6 +128,12 @@ button:hover { background: #e5e5e5; }
 button:disabled { opacity: 0.4; cursor: default; }
 button.secondary { background: #2a2a2a; color: #888; }
 button.secondary:hover { background: #333; color: #aaa; }
+button.progress {
+  --progress: 0%;
+  background: linear-gradient(90deg, #4a4 var(--progress), #222 var(--progress));
+  color: #fff;
+  opacity: 1;
+}
 
 /* Inputs */
 input[type="text"], input[type="password"] {
@@ -160,10 +167,10 @@ input:focus { outline: 1px solid #555; }
 #deck-settings {
   background: #1a1a1a;
   border-radius: 8px;
-  padding: 8px;
+  padding: 12px;
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 8px;
   flex-shrink: 0;
 }
 
