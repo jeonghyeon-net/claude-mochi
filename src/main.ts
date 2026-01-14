@@ -17,7 +17,10 @@ const log = (msg: string, t = '') => {
 async function init() {
   // Load saved keys
   const mochiKey = await window.electronAPI.getMochiKey()
-  if (mochiKey) ($('mochi-key') as HTMLInputElement).value = mochiKey
+  if (mochiKey) {
+    ($('mochi-key') as HTMLInputElement).value = mochiKey
+    ;($('quiz-mochi-key') as HTMLInputElement).value = mochiKey
+  }
 
   const paddleToken = await window.electronAPI.getPaddleOcrToken()
   if (paddleToken) ($('paddle-ocr-token') as HTMLInputElement).value = paddleToken
@@ -35,17 +38,24 @@ async function init() {
     btn.textContent = `${current}/${total}`
   })
 
-  // Helper to setup key input behavior
-  const setupKeyInput = (id: string, saveFn: (v: string) => void, onChange?: () => void) => {
+  // Helper to setup key input behavior with sync
+  const setupKeyInput = (id: string, saveFn: (v: string) => void, onChange?: () => void, syncId?: string) => {
     const input = $(id) as HTMLInputElement
-    const save = () => { saveFn(input.value.trim()); onChange?.() }
+    const save = () => {
+      const v = input.value.trim()
+      saveFn(v)
+      onChange?.()
+      if (syncId) ($(syncId) as HTMLInputElement).value = v
+    }
     input.addEventListener('focus', () => input.type = 'text')
     input.addEventListener('blur', () => { input.type = 'password'; save() })
     input.addEventListener('input', save)
     input.addEventListener('paste', () => setTimeout(save, 0))
   }
 
-  setupKeyInput('mochi-key', (v) => window.electronAPI.setMochiKey(v))
+  // Sync mochi-key between Cards and Quiz tabs
+  setupKeyInput('mochi-key', (v) => window.electronAPI.setMochiKey(v), undefined, 'quiz-mochi-key')
+  setupKeyInput('quiz-mochi-key', (v) => window.electronAPI.setMochiKey(v), undefined, 'mochi-key')
   setupKeyInput('paddle-ocr-token', (v) => window.electronAPI.setPaddleOcrToken(v), updateParseBtn)
 
   updateParseBtn()
@@ -184,6 +194,90 @@ $('reset-btn').addEventListener('click', () => {
   $('drop-zone').classList.remove('hidden')
   ;($('deck-name') as HTMLInputElement).value = ''
   log('reset', 'data')
+})
+
+// ===== Tabs =====
+document.querySelectorAll('.tab').forEach(tab => {
+  tab.addEventListener('click', () => {
+    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'))
+    document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'))
+    tab.classList.add('active')
+    $('tab-' + (tab as HTMLElement).dataset.tab).classList.add('active')
+  })
+})
+
+// ===== Quiz Tab =====
+let quizCards: MochiCard[] = []
+let quizBusy = false
+
+function updateQuizButtons() {
+  ;($('generate-quiz-btn') as HTMLButtonElement).disabled = quizCards.length === 0
+  ;($('copy-quiz-btn') as HTMLButtonElement).disabled = !($('quiz-output') as HTMLTextAreaElement).value
+  ;($('fetch-cards-btn') as HTMLButtonElement).disabled = quizBusy
+}
+
+$('fetch-cards-btn').addEventListener('click', async () => {
+  if (quizBusy) return
+  const deckId = ($('quiz-deck-id') as HTMLInputElement).value.trim()
+  if (!deckId) return
+
+  const btn = $('fetch-cards-btn') as HTMLButtonElement
+  quizBusy = true
+  btn.disabled = true
+  btn.textContent = '...'
+
+  try {
+    quizCards = await window.electronAPI.fetchDeckCards(deckId)
+    $('quiz-card-count').textContent = `${quizCards.length} cards loaded`
+  } catch (e) {
+    $('quiz-card-count').textContent = (e as Error).message
+    quizCards = []
+  }
+  quizBusy = false
+  updateQuizButtons()
+  btn.textContent = 'Fetch Cards'
+})
+
+function shuffle<T>(arr: T[]): T[] {
+  const a = [...arr]
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1))
+    ;[a[i], a[j]] = [a[j], a[i]]
+  }
+  return a
+}
+
+$('generate-quiz-btn').addEventListener('click', () => {
+  if (quizCards.length === 0) return
+
+  // Get selected quiz types
+  const selectedTypes = Array.from(document.querySelectorAll('input[name="quiz-type"]:checked'))
+    .map(el => (el as HTMLInputElement).value)
+  if (selectedTypes.length === 0) return
+
+  const shuffled = shuffle(quizCards)
+
+  const lines = shuffled.map(card => {
+    // Random type per question
+    const quizType = selectedTypes[Math.floor(Math.random() * selectedTypes.length)]
+    let q = ''
+    if (quizType === 'reading') q = card.reading || card.front
+    else if (quizType === 'meaning') q = card.meaning
+    else if (quizType === 'kanji') q = card.kanji || card.front
+    return `Q. ${q}\nA.  `
+  })
+
+  ;($('quiz-output') as HTMLTextAreaElement).value = lines.join('\n\n')
+  updateQuizButtons()
+})
+
+$('copy-quiz-btn').addEventListener('click', async () => {
+  const text = ($('quiz-output') as HTMLTextAreaElement).value
+  if (!text) return
+  await navigator.clipboard.writeText(text)
+  const btn = $('copy-quiz-btn') as HTMLButtonElement
+  btn.textContent = 'Copied!'
+  setTimeout(() => { btn.textContent = 'Copy' }, 1000)
 })
 
 init()

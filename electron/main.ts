@@ -175,3 +175,53 @@ ipcMain.handle('create-mochi-deck', async (_event, data: {
     totalWords: data.words.length
   }
 })
+
+// Fetch cards from a Mochi deck
+ipcMain.handle('fetch-deck-cards', async (_event, deckId: string) => {
+  const mochiApiKey = store.get('mochiApiKey') as string
+
+  if (!mochiApiKey) {
+    throw new Error('Mochi API Key가 설정되지 않았습니다.')
+  }
+
+  // Clean deck ID (remove brackets if present, e.g., [[abc123]] -> abc123)
+  const cleanDeckId = deckId.replace(/[\[\]]/g, '').trim()
+
+  const headers = {
+    'Authorization': 'Basic ' + Buffer.from(mochiApiKey + ':').toString('base64')
+  }
+
+  // Fetch all cards from deck
+  const url = new URL('https://app.mochi.cards/api/cards')
+  url.searchParams.set('deck-id', cleanDeckId)
+  url.searchParams.set('limit', '1000')
+
+  const response = await fetch(url.toString(), { method: 'GET', headers })
+
+  if (!response.ok) {
+    const error = await response.text()
+    throw new Error('카드 가져오기 실패: ' + error)
+  }
+
+  const data = await response.json() as { docs: Array<{ content: string }> }
+  const allCards = data.docs
+
+  // Parse card content to extract word info
+  // Format: # {漢}(かん){字}(じ)\n\n---\n\n뜻
+  const cards = allCards.map(card => {
+    const content = card.content || ''
+    const parts = content.split('---')
+    const front = parts[0]?.replace(/^#\s*/, '').trim() || ''
+    const meaning = parts[1]?.trim() || ''
+
+    // Extract reading from furigana: {漢}(かん){字}(じ) → かんじ
+    const reading = front.replace(/\{[^}]+\}\(([^)]+)\)/g, '$1').replace(/[^\u3040-\u309F]/g, '')
+
+    // Extract kanji only: {漢}(かん){字}(じ) → 漢字
+    const kanji = front.replace(/\{([^}]+)\}\([^)]+\)/g, '$1').replace(/[{()}]/g, '')
+
+    return { front, reading, kanji, meaning }
+  })
+
+  return cards
+})

@@ -7,32 +7,63 @@
   </head>
   <body>
     <div id="app">
-      <div id="left">
-        <div id="drop-zone">
-          <span>Click to select image</span>
+      <div id="tabs">
+        <button class="tab active" data-tab="cards">Cards</button>
+        <button class="tab" data-tab="quiz">Quiz</button>
+      </div>
+
+      <div id="tab-cards" class="tab-content active">
+        <div id="left">
+          <div id="drop-zone">
+            <span>Click to select image</span>
+          </div>
+
+          <div id="preview" class="hidden">
+            <img id="preview-img" />
+            <input type="password" id="paddle-ocr-token" placeholder="PaddleOCR Token" />
+            <div class="actions">
+              <button id="parse-btn" disabled>Parse</button>
+            </div>
+          </div>
         </div>
 
-        <div id="preview" class="hidden">
-          <img id="preview-img" />
-          <input type="password" id="paddle-ocr-token" placeholder="PaddleOCR Token" />
-          <div class="actions">
-            <button id="parse-btn" disabled>Parse</button>
+        <div id="right">
+          <div id="results">
+            <div id="words"></div>
+          </div>
+
+          <div id="log"></div>
+
+          <div id="deck-settings">
+            <input type="text" id="deck-name" placeholder="Deck name" />
+            <input type="password" id="mochi-key" placeholder="Mochi API Key" />
+            <button id="create-btn">Create Deck</button>
+            <button id="reset-btn" class="secondary">Reset</button>
           </div>
         </div>
       </div>
 
-      <div id="right">
-        <div id="results">
-          <div id="words"></div>
+      <div id="tab-quiz" class="tab-content">
+        <div id="quiz-left">
+          <div id="quiz-settings">
+            <input type="text" id="quiz-deck-id" placeholder="Deck ID" />
+            <input type="password" id="quiz-mochi-key" placeholder="Mochi API Key" />
+            <button id="fetch-cards-btn">Fetch Cards</button>
+            <div id="quiz-card-count"></div>
+          </div>
+
+          <div id="quiz-options">
+            <label><input type="checkbox" name="quiz-type" value="reading" checked> 요미가나</label>
+            <label><input type="checkbox" name="quiz-type" value="meaning" checked> 뜻</label>
+            <label><input type="checkbox" name="quiz-type" value="kanji" checked> 한자</label>
+          </div>
+
+          <button id="generate-quiz-btn" disabled>Generate Quiz</button>
         </div>
 
-        <div id="log"></div>
-
-        <div id="deck-settings">
-          <input type="text" id="deck-name" placeholder="Deck name" />
-          <input type="password" id="mochi-key" placeholder="Mochi API Key" />
-          <button id="create-btn">Create Deck</button>
-          <button id="reset-btn" class="secondary">Reset</button>
+        <div id="quiz-right">
+          <textarea id="quiz-output" readonly placeholder="Quiz will appear here..."></textarea>
+          <button id="copy-quiz-btn" class="secondary" disabled>Copy</button>
         </div>
       </div>
     </div>

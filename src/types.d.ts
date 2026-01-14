@@ -25,6 +25,13 @@ interface DeckResult {
   totalWords: number
 }
 
+interface MochiCard {
+  front: string
+  reading: string
+  kanji: string
+  meaning: string
+}
+
 interface ElectronAPI {
   checkClaude: () => Promise<ClaudeAvailability>
   getMochiKey: () => Promise<string>
@@ -34,6 +41,7 @@ interface ElectronAPI {
   selectImage: () => Promise<ImageData | null>
   parseImage: (imagePath: string) => Promise<JapaneseWord[]>
   createMochiDeck: (data: { deckName: string; words: JapaneseWord[] }) => Promise<DeckResult>
+  fetchDeckCards: (deckId: string) => Promise<MochiCard[]>
   onProgress: (callback: (msg: string) => void) => void
   onDeckProgress: (callback: (data: { current: number; total: number }) => void) => void
 }

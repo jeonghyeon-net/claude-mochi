@@ -48,6 +48,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
   createMochiDeck: (data: { deckName: string; words: JapaneseWord[] }): Promise<DeckResult> =>
     ipcRenderer.invoke('create-mochi-deck', data),
 
+  // Fetch cards from deck
+  fetchDeckCards: (deckId: string): Promise<Array<{ front: string; reading: string; kanji: string; meaning: string }>> =>
+    ipcRenderer.invoke('fetch-deck-cards', deckId),
+
   // Progress events
   onProgress: (callback: (msg: string) => void) => {
     ipcRenderer.on('progress', (_event, msg) => callback(msg))
